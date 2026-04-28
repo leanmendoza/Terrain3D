@@ -14,11 +14,34 @@
 // Private Functions
 ///////////////////////////
 
+// Region map size is renderer-dependent. Forward+/Mobile use a 32x32 grid (1024 cells);
+// Compatibility uses 16x16 (256 cells) so MaterialUniforms fits under the WebGL2-mandated
+// GL_MAX_UNIFORM_BLOCK_SIZE = 16384 bytes. RenderingDevice is only created by Vulkan/D3D12,
+// so a null RenderingDevice means we are on the Compatibility (GL/GLES) backend.
+int Terrain3DData::get_region_map_size() {
+	static int cached = -1;
+	if (cached < 0) {
+		RenderingServer *rs = RenderingServer::get_singleton();
+		cached = (rs != nullptr && rs->get_rendering_device() == nullptr) ? 16 : 32;
+	}
+	return cached;
+}
+
+Vector2i Terrain3DData::get_region_map_vsize() {
+	int s = get_region_map_size();
+	return Vector2i(s, s);
+}
+
+int Terrain3DData::get_region_map_count() {
+	int s = get_region_map_size();
+	return s * s;
+}
+
 void Terrain3DData::_clear() {
 	LOG(INFO, "Clearing data");
 	_region_map_dirty = true;
 	_region_map.clear();
-	_region_map.resize(REGION_MAP_SIZE * REGION_MAP_SIZE);
+	_region_map.resize(get_region_map_count());
 	_regions.clear();
 	_region_locations.clear();
 	_master_height_range = V2_ZERO;
@@ -55,7 +78,7 @@ void Terrain3DData::initialize(Terrain3D *p_terrain) {
 	LOG(INFO, "Initializing data");
 	bool prev_initialized = _terrain != nullptr;
 	_terrain = p_terrain;
-	_region_map.resize(REGION_MAP_SIZE * REGION_MAP_SIZE);
+	_region_map.resize(get_region_map_count());
 	_vertex_spacing = _terrain->get_vertex_spacing();
 	if (!prev_initialized && !_terrain->get_data_directory().is_empty()) {
 		load_directory(_terrain->get_data_directory());
@@ -244,7 +267,7 @@ Error Terrain3DData::add_region(const Ref<Terrain3DRegion> &p_region, const bool
 	// Check bounds and slow report errors
 	if (get_region_map_index(region_loc) < 0) {
 		LOG(ERROR, "Location ", region_loc, " out of bounds. Max: ",
-				-REGION_MAP_SIZE / 2, " to ", REGION_MAP_SIZE / 2 - 1);
+				-get_region_map_size() / 2, " to ", get_region_map_size() / 2 - 1);
 		return FAILED;
 	}
 	p_region->sanitize_maps();
@@ -480,9 +503,9 @@ void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regio
 
 	// Rebuild region map if dirty
 	if (_region_map_dirty) {
-		LOG(EXTREME, "Regenerating ", REGION_MAP_VSIZE, " region map array from active regions");
+		LOG(EXTREME, "Regenerating ", get_region_map_vsize(), " region map array from active regions");
 		_region_map.clear();
-		_region_map.resize(REGION_MAP_SIZE * REGION_MAP_SIZE);
+		_region_map.resize(get_region_map_count());
 		_region_map_dirty = false;
 		_region_locations = TypedArray<Vector2i>(); // enforce new pointer
 		int region_id = 0;
@@ -881,7 +904,7 @@ void Terrain3DData::import_images(const TypedArray<Image> &p_images, const Vecto
 	}
 
 	Vector3 descaled_position = p_global_position / _vertex_spacing;
-	int max_dimension = _region_size * REGION_MAP_SIZE / 2;
+	int max_dimension = _region_size * get_region_map_size() / 2;
 	if ((std::abs(descaled_position.x) > max_dimension) || (std::abs(descaled_position.z) > max_dimension)) {
 		LOG(ERROR, "Specify a position within +/-", Vector3(max_dimension, 0.f, max_dimension) * _vertex_spacing);
 		return;
@@ -934,7 +957,7 @@ void Terrain3DData::import_images(const TypedArray<Image> &p_images, const Vecto
 	int end_region_z = (int)Math::floor(real_t(img_end_z) / real_t(_region_size));
 
 	// Clamp region indices to valid range
-	int half_region_map = REGION_MAP_SIZE / 2;
+	int half_region_map = get_region_map_size() / 2;
 	start_region_x = CLAMP(start_region_x, -half_region_map, half_region_map - 1);
 	start_region_z = CLAMP(start_region_z, -half_region_map, half_region_map - 1);
 	end_region_x = CLAMP(end_region_x, -half_region_map, half_region_map - 1);
@@ -1185,7 +1208,9 @@ void Terrain3DData::_bind_methods() {
 	BIND_ENUM_CONSTANT(HEIGHT_FILTER_NEAREST);
 	BIND_ENUM_CONSTANT(HEIGHT_FILTER_MINIMUM);
 
-	BIND_CONSTANT(REGION_MAP_SIZE);
+	ClassDB::bind_static_method("Terrain3DData", D_METHOD("get_region_map_size"), &Terrain3DData::get_region_map_size);
+	ClassDB::bind_static_method("Terrain3DData", D_METHOD("get_region_map_vsize"), &Terrain3DData::get_region_map_vsize);
+	ClassDB::bind_static_method("Terrain3DData", D_METHOD("get_region_map_count"), &Terrain3DData::get_region_map_count);
 
 	ClassDB::bind_method(D_METHOD("get_region_count"), &Terrain3DData::get_region_count);
 	ClassDB::bind_method(D_METHOD("set_region_locations", "region_locations"), &Terrain3DData::set_region_locations);

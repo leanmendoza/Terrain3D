@@ -31,7 +31,7 @@ Dictionary Terrain3DCollision::_get_shape_data(const Vector2i &p_position, const
 	const bool is_bg_flat_or_noise = bg_mode == Terrain3DMaterial::WorldBackground::FLAT || bg_mode == Terrain3DMaterial::WorldBackground::NOISE;
 	const real_t ground_level = material->get("ground_level");
 	const real_t region_blend = material->get("region_blend");
-	const int region_map_size = Terrain3DData::REGION_MAP_SIZE;
+	const int region_map_size = Terrain3DData::get_region_map_size();
 	const PackedInt32Array region_map = data->get_region_map();
 	const int region_size = _terrain->get_region_size();
 	const real_t region_texel_size = 1.f / real_t(region_size);

@@ -39,6 +39,16 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
     #define fma(a, b, c) ((a) * (b) + (c))
     #define dFdxCoarse(a) dFdx(a)
     #define dFdyCoarse(a) dFdy(a)
+    // WebGL2 only guarantees GL_MAX_UNIFORM_BLOCK_SIZE = 16384 bytes. Two flat
+    // [1024] arrays (`_region_map`, `_region_locations`) under std140 packing
+    // alone consume ~32 KB and overflow the block. Drop to a 16x16 grid (256
+    // entries) on Compatibility so MaterialUniforms fits. Must match
+    // Terrain3DData::get_region_map_size() on the C++ side.
+    #define _T3D_REGION_DIM 16
+    #define _T3D_REGION_ARRAY 256
+#else
+    #define _T3D_REGION_DIM 32
+    #define _T3D_REGION_ARRAY 1024
 #endif
 
 // Private uniforms
@@ -53,9 +63,9 @@ uniform float _vertex_spacing = 1.0;
 uniform float _vertex_density = 1.0; // = 1./_vertex_spacing
 uniform float _region_size = 1024.0;
 uniform float _region_texel_size = 0.0009765625; // = 1./region_size
-uniform int _region_map_size = 32;
-uniform int _region_map[1024];
-uniform vec2 _region_locations[1024];
+uniform int _region_map_size = _T3D_REGION_DIM;
+uniform int _region_map[_T3D_REGION_ARRAY];
+uniform vec2 _region_locations[_T3D_REGION_ARRAY];
 uniform float _texture_normal_depth_array[32];
 uniform float _texture_ao_strength_array[32];
 uniform float _texture_ao_affect_array[32];

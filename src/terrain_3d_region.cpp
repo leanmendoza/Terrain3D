@@ -279,10 +279,10 @@ void Terrain3DRegion::set_instances(const Dictionary &p_instances) {
 
 void Terrain3DRegion::set_location(const Vector2i &p_location) {
 	// In the future anywhere they want to put the location might be fine, but because of region_map
-	// We have a limitation of 32x32.
+	// Region grid is 32x32 on Forward+/Mobile and 16x16 on Compatibility — see Terrain3DData::get_region_map_size().
 	if (Terrain3DData::get_region_map_index(p_location) < 0) {
 		LOG(ERROR, "Location ", p_location, " out of bounds. Max: ",
-				-Terrain3DData::REGION_MAP_SIZE / 2, " to ", Terrain3DData::REGION_MAP_SIZE / 2 - 1);
+				-Terrain3DData::get_region_map_size() / 2, " to ", Terrain3DData::get_region_map_size() / 2 - 1);
 		return;
 	}
 	// Marked modified if setting after initialized

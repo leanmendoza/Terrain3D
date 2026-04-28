@@ -17,8 +17,16 @@ class Terrain3DData : public Object {
 
 public: // Constants
 	static inline const real_t CURRENT_DATA_VERSION = 0.93f; // Current Data format version
-	static inline const int REGION_MAP_SIZE = 32;
-	static inline const Vector2i REGION_MAP_VSIZE = V2I(REGION_MAP_SIZE);
+
+	// Region map dimensions are renderer-dependent.
+	//   Forward+/Mobile: 32x32 grid (1024 cells), legacy default.
+	//   Compatibility (incl. WebGL2): 16x16 grid (256 cells) so MaterialUniforms
+	//     fits under the WebGL2-mandated GL_MAX_UNIFORM_BLOCK_SIZE = 16384 bytes.
+	// Resolved once on first access; the result is stable for the process lifetime.
+	static int get_region_map_size();
+	static Vector2i get_region_map_vsize();
+	// Total cell count = get_region_map_size() squared.
+	static int get_region_map_count();
 
 	enum HeightFilter {
 		HEIGHT_FILTER_NEAREST,
@@ -65,7 +73,8 @@ private:
 	// Editing occurs on the Image arrays above, which are converted to Texture arrays
 	// below for the shader.
 
-	// 32x32 grid with region_id:int at its location, no region = 0, region_ids >= 1
+	// Square grid (32x32 on Forward+/Mobile, 16x16 on Compatibility) with region_id:int
+	// at its location, no region = 0, region_ids >= 1. See get_region_map_size().
 	PackedInt32Array _region_map;
 	bool _region_map_dirty = true;
 
@@ -197,16 +206,18 @@ VARIANT_ENUM_CAST(Terrain3DData::HeightFilter);
 
 // Verifies the location is within the bounds of the _region_map array and
 // the world, returning the _region_map index, which contains the region_id.
-// Valid region locations are -16, -16 to 15, 15, or when offset: 0, 0 to 31, 31
-// If any bits other than 0x1F are set, it's out of bounds and returns -1
+// Valid region locations span [-size/2, size/2) on each axis, where size comes
+// from get_region_map_size() (32 on Forward+/Mobile, 16 on Compatibility).
+// Returns -1 if out of bounds.
 inline int Terrain3DData::get_region_map_index(const Vector2i &p_region_loc) {
+	int size = get_region_map_size();
 	// Offset world to positive values only
-	Vector2i loc = p_region_loc + (REGION_MAP_VSIZE / 2);
-	// Catch values > 31
-	if ((uint32_t(loc.x | loc.y) & uint32_t(~0x1F)) > 0) {
+	Vector2i loc = p_region_loc + Vector2i(size >> 1, size >> 1);
+	// Out-of-bounds check: relies on negative values becoming large uints.
+	if (uint32_t(loc.x | loc.y) >= uint32_t(size)) {
 		return -1;
 	}
-	return loc.y * REGION_MAP_SIZE + loc.x;
+	return loc.y * size + loc.x;
 }
 
 // Returns a region location given a global position. No bounds checking nor data access.
