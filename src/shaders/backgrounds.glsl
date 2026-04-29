@@ -24,7 +24,7 @@ float check_region(const vec2 uv2) {
 	ivec2 pos = ivec2(floor(uv2)) + (_region_map_size / 2);
 	int layer_index = 0;
 	if (uint(pos.x | pos.y) < uint(_region_map_size)) {
-		layer_index = clamp(_region_map[ pos.y * _region_map_size + pos.x ] - 1, -1, 0) + 1;
+		layer_index = clamp(region_id_at(pos) - 1, -1, 0) + 1;
 	}
 	return float(layer_index);
 }

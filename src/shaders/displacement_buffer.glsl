@@ -46,8 +46,9 @@ uniform float _vertex_density = 1.0; // = 1./_vertex_spacing
 uniform float _region_size = 1024.0;
 uniform float _region_texel_size = 0.0009765625; // = 1./region_size
 uniform int _region_map_size = 32;
-uniform int _region_map[1024];
-uniform vec2 _region_locations[1024];
+// See main.glsl for the texture-backed region map layout.
+uniform highp sampler2D _region_map_tex : hint_default_black, repeat_disable;
+uniform highp sampler2D _region_locations_tex : hint_default_black, repeat_disable;
 uniform float _texture_uv_scale_array[32];
 uniform vec2 _texture_detile_array[32];
 uniform vec2 _texture_displacement_array[32];
@@ -88,6 +89,14 @@ struct material {
 // Vertex
 ////////////////////////
 
+int region_id_at(ivec2 pos) {
+	return int(texelFetch(_region_map_tex, pos, 0).r);
+}
+
+vec2 region_loc_at(int region_index_0based) {
+	return texelFetch(_region_locations_tex, ivec2(region_index_0based, 0), 0).rg;
+}
+
 // Takes in world space XZ (UV) coordinates
 // Returns ivec3 with:
 // XY: (0 to _region_size - 1) coordinates within a region
@@ -96,7 +105,7 @@ ivec3 get_index_coord(const vec2 uv) {
 	vec2 r_uv = round(uv);
 	ivec2 pos = ivec2(floor(r_uv * _region_texel_size)) + (_region_map_size / 2);
 	int bounds = int(uint(pos.x | pos.y) < uint(_region_map_size));
-	int layer_index = _region_map[pos.y * _region_map_size + pos.x] * bounds - 1;
+	int layer_index = region_id_at(pos) * bounds - 1;
 	return ivec3(ivec2(mod(r_uv, _region_size)), layer_index);
 }
 
@@ -106,8 +115,8 @@ ivec3 get_index_coord(const vec2 uv) {
 vec3 get_index_uv(const vec2 uv2) {
 	ivec2 pos = ivec2(floor(uv2)) + (_region_map_size / 2);
 	int bounds = int(uint(pos.x | pos.y) < uint(_region_map_size));
-	int layer_index = _region_map[ pos.y * _region_map_size + pos.x ] * bounds - 1;
-	return vec3(uv2 - _region_locations[layer_index], float(layer_index));
+	int layer_index = region_id_at(pos) * bounds - 1;
+	return vec3(uv2 - region_loc_at(layer_index), float(layer_index));
 }
 
 ////////////////////////
@@ -136,7 +145,7 @@ void accumulate_material(const mat3 TNB, const float weight, const ivec3 index,
 	h *= control_scale;
 
 	// Index position for detiling.
-	vec2 i_pos = fma(_region_locations[index.z], vec2(_region_size), vec2(index.xy));
+	vec2 i_pos = fma(region_loc_at(index.z), vec2(_region_size), vec2(index.xy));
 	i_pos *= _vertex_spacing * control_scale;
 
 	// Projection

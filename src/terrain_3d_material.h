@@ -54,6 +54,17 @@ private:
 	real_t _displacement_scale = 1.0f;
 	real_t _displacement_sharpness = 0.5f;
 
+	// Region map data is stored in textures rather than uniform arrays so the
+	// per-material UBO stays under the WebGL2-mandated GL_MAX_UNIFORM_BLOCK_SIZE
+	// of 16 KB. Both the main and buffer materials reference the same RIDs.
+	//   _region_map_tex: REGION_MAP_SIZE x REGION_MAP_SIZE, FORMAT_RF.
+	//     Each texel stores float(region_id), 0 = empty, 1+ = active region.
+	//   _region_locations_tex: (REGION_MAP_SIZE^2) x 1, FORMAT_RGF.
+	//     Each texel stores (loc.x, loc.y) of the region whose 0-based id maps
+	//     to the texel's x coordinate.
+	RID _region_map_tex_rid;
+	RID _region_locations_tex_rid;
+
 	// Material Features
 	WorldBackground _world_background = FLAT;
 	TextureFiltering _texture_filtering = LINEAR_ANISOTROPIC;
@@ -106,6 +117,7 @@ private:
 	String _strip_comments(const String &p_shader) const;
 	String _inject_editor_code(const String &p_shader) const;
 	void _update_shader();
+	void _update_region_textures();
 	void _update_uniforms(const RID &p_material, const uint32_t p_update = UNIFORMS_ONLY);
 	void _set_shader_parameters(const Dictionary &p_dict);
 	Dictionary _get_shader_parameters() const { return _shader_params; }

@@ -624,6 +624,63 @@ void Terrain3DMaterial::_update_shader() {
 	notify_property_list_changed();
 }
 
+// Build (or refresh) the region map and region locations textures from the
+// data layer. Called once per update() before _update_uniforms is fanned out
+// to the main and buffer materials, so a single RID is shared between them.
+void Terrain3DMaterial::_update_region_textures() {
+	IS_DATA_INIT(VOID);
+	const int dim = Terrain3DData::REGION_MAP_SIZE;
+	const int total = dim * dim;
+	Terrain3DData *data = _terrain->get_data();
+
+	// _region_map: dim x dim float (1-based region_id, or 0 for empty cells).
+	{
+		PackedInt32Array region_map = data->get_region_map();
+		if (region_map.size() != total) {
+			LOG(ERROR, "Expected region_map.size() of ", total);
+			return;
+		}
+		PackedByteArray bytes;
+		bytes.resize(total * sizeof(float));
+		float *dst = reinterpret_cast<float *>(bytes.ptrw());
+		for (int i = 0; i < total; ++i) {
+			dst[i] = float(region_map[i]);
+		}
+		Ref<Image> img = Image::create_from_data(dim, dim, false, Image::FORMAT_RF, bytes);
+		if (!_region_map_tex_rid.is_valid()) {
+			_region_map_tex_rid = RS->texture_2d_create(img);
+		} else {
+			RS->texture_2d_update(_region_map_tex_rid, img, 0);
+		}
+	}
+
+	// _region_locations: total x 1 RG float. Texel x = 0-based region id.
+	// Fixed width so the shader can use a constant texelFetch range; trailing
+	// slots (no active region) are zero-filled and never read by the shader.
+	{
+		TypedArray<Vector2i> region_locations = data->get_region_locations();
+		PackedByteArray bytes;
+		bytes.resize(total * 2 * sizeof(float));
+		float *dst = reinterpret_cast<float *>(bytes.ptrw());
+		const int count = region_locations.size();
+		for (int i = 0; i < count; ++i) {
+			Vector2i loc = region_locations[i];
+			dst[i * 2 + 0] = float(loc.x);
+			dst[i * 2 + 1] = float(loc.y);
+		}
+		for (int i = count; i < total; ++i) {
+			dst[i * 2 + 0] = 0.f;
+			dst[i * 2 + 1] = 0.f;
+		}
+		Ref<Image> img = Image::create_from_data(total, 1, false, Image::FORMAT_RGF, bytes);
+		if (!_region_locations_tex_rid.is_valid()) {
+			_region_locations_tex_rid = RS->texture_2d_create(img);
+		} else {
+			RS->texture_2d_update(_region_locations_tex_rid, img, 0);
+		}
+	}
+}
+
 void Terrain3DMaterial::_update_uniforms(const RID &p_material, const uint32_t p_flags) {
 	IS_DATA_INIT(VOID);
 	LOG(EXTREME, "Updating uniforms in shader");
@@ -635,7 +692,7 @@ void Terrain3DMaterial::_update_uniforms(const RID &p_material, const uint32_t p
 		LOG(ERROR, "Expected region_map.size() of ", Terrain3DData::REGION_MAP_SIZE * Terrain3DData::REGION_MAP_SIZE);
 		return;
 	}
-	RS->material_set_param(p_material, "_region_map", region_map);
+	RS->material_set_param(p_material, "_region_map_tex", _region_map_tex_rid);
 	RS->material_set_param(p_material, "_region_map_size", Terrain3DData::REGION_MAP_SIZE);
 	if (Terrain3D::debug_level >= EXTREME) {
 		LOG(EXTREME, "Region map");
@@ -648,7 +705,7 @@ void Terrain3DMaterial::_update_uniforms(const RID &p_material, const uint32_t p
 
 	TypedArray<Vector2i> region_locations = data->get_region_locations();
 	LOG(EXTREME, "Region_locations size: ", region_locations.size(), " ", region_locations);
-	RS->material_set_param(p_material, "_region_locations", region_locations);
+	RS->material_set_param(p_material, "_region_locations_tex", _region_locations_tex_rid);
 
 	real_t region_size = real_t(_terrain->get_region_size());
 	LOG(EXTREME, "Setting region size in material: ", region_size);
@@ -763,12 +820,23 @@ void Terrain3DMaterial::destroy() {
 		RS->free_rid(_buffer_material);
 		_buffer_material = RID();
 	}
+	if (_region_map_tex_rid.is_valid()) {
+		RS->free_rid(_region_map_tex_rid);
+		_region_map_tex_rid = RID();
+	}
+	if (_region_locations_tex_rid.is_valid()) {
+		RS->free_rid(_region_locations_tex_rid);
+		_region_locations_tex_rid = RID();
+	}
 }
 
 void Terrain3DMaterial::update(uint32_t p_flags) {
 	if (p_flags & FULL_REBUILD) {
 		_update_shader();
 	}
+	// Build the shared region map / region locations textures once before fanning
+	// out the per-material uniform calls so both materials reference the same RIDs.
+	_update_region_textures();
 	_update_uniforms(_material, p_flags);
 	IS_INIT(VOID);
 	if (_terrain->get_tessellation_level() > 0) {
